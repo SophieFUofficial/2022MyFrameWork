@@ -3,33 +3,38 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
+const mongoose = require('mongoose');
 const logger = require('morgan');
-// webpack-dev-server config
-const webpack = require('webpack');
-const webpackDevMiddleware = require('webpack-dev-middleware');
-const webpackHotMiddleware = require('webpack-hot-middleware');
-const config = require('../webpack.dev.js');
-const compiler = webpack(config);
+const config = require('./config/config');
+const router = require('./routes/index');
 
 const app = express();
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(config.output.path));
+connect();
 
-app.use(
-    webpackDevMiddleware(compiler, {
-        publicPath: config.output.publicPath,
-    })
-);
-app.use(webpackHotMiddleware(compiler));
+if (process.env.NODE_ENV === 'development') {
+    // webpack-dev-server config
+    const webpack = require('webpack');
+    const webpackDevMiddleware = require('webpack-dev-middleware');
+    const webpackHotMiddleware = require('webpack-hot-middleware');
+    const config = require('../webpack.dev');
+    const compiler = webpack(config);
+    app.use(
+        webpackDevMiddleware(compiler, {
+            publicPath: '/',
+        })
+    );
+    app.use(webpackHotMiddleware(compiler));
+} else {
+    app.use(express.static(path.resolve(__dirname, '../build')));
+}
+
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
-app.get('/', function (req, res) {
-    res.render('index');
-});
 
 // const ENV = process.env.NODE_ENV;
 // if (ENV !== 'production') {
@@ -45,8 +50,24 @@ app.get('/', function (req, res) {
 // }
 
 // Routers
-const testRouter = require('./routes/test');
-app.use('/test', testRouter);
+router(app);
+
+function connect() {
+    mongoose.connection
+        .on('error', (error) => {
+            console.error('Error in MongoDb connection: ' + error);
+            mongoose.disconnect();
+        })
+        .on('disconnected', connect)
+        .once('open', () => {
+            console.log('连接数据库成功');
+        });
+    return mongoose.connect(config.dbUrl, {
+        keepAlive: 1,
+        useNewUrlParser: true,
+        useUnifiedTopology: true
+    });
+}
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
